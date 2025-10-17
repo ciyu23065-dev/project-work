@@ -1,0 +1,40 @@
+# ワークフローの名称
+name: Project Work Data Scraping
+
+# トリガー条件
+on:
+  # 手動実行を許可
+  workflow_dispatch:
+
+  # 定時実行（毎日 日本時間 午前0時）
+  schedule:
+    - cron: '0 15 * * *'  # UTCで15時 = JSTで0時
+
+jobs:
+  scrape-and-upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. ソースコードをチェックアウト
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Python環境をセットアップ
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      # 3. 依存関係のインストール
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 4. Secretsから認証情報を生成
+      - name: Create Google Drive credentials file
+        run: echo '${{ secrets.GDRIVE_SA_KEY }}' > credentials.json
+
+      # 5. Pythonスクリプトの実行
+      - name: Run Python script
+        run: python main.py # ここを自分のファイル名に変更
