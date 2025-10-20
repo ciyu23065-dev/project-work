@@ -18,21 +18,12 @@ from google.oauth2.service_account import Credentials
 
 
 # ========== 設定 ==========
-# YouTube Data API の APIキー（公開データのみ取得に使用）
-YOUTUBE_API_KEY = "AIzaSyC1AJIdp2eulKBv5SPVGgptMlmC7a1PQwI"   # ←あなたのAPIキーに置換
-
-# Google Drive上の共有CSVのファイルID（指定済み）
+YOUTUBE_API_KEY = "AIzaSyC1AJIdp2eulKBv5SPVGgptMlmC7a1PQwI"   # ←自分のAPIキー
 DRIVE_FILE_ID = "1fZntJuEUcpTeXcbR5aGWvVj8WfsAE_Cb"
-
-# サービスアカウントの認証ファイル（同一ディレクトリ）
 SERVICE_ACCOUNT_JSON = "credentials.json"
-
-# ローカルにバックアップとしても保存
 LOCAL_CSV_PATH = "local_youtube_views.csv"
 
-# 取得したい動画URLを指定（何本でもOK）
 VIDEO_URLS = [
-    # 例:
     "https://youtu.be/pv8A7eubPQQ?si=cAZ3HIwTN_q_evlH",
     "https://youtu.be/HcXduBwK5B4?si=SzkZxq1KKuMPcnRg",
     "https://youtu.be/ZfIXXgqxVn8?si=_61UUSlWh4aBeH7W",
@@ -40,34 +31,25 @@ VIDEO_URLS = [
     "https://youtu.be/Ca5cdthagBM?si=I4lxZcKMeZfP9ziB",
 ]
 
-# 保存するカラム（要件：日付・動画名・再生数）
-CSV_COLUMNS = ["date", "title", "views"]
+# 変更：列を拡張（no と url を追加）
+CSV_COLUMNS = ["date", "no", "url", "title", "views"]
 
 
 # ========== ユーティリティ ==========
 def extract_video_id(url: str) -> str | None:
-    """
-    YouTubeの各種URLから videoId を抽出。
-      - https://www.youtube.com/watch?v=VIDEOID&...
-      - https://youtu.be/VIDEOID?...
-      - https://www.youtube.com/shorts/VIDEOID
-    """
     try:
         parsed = urlparse(url)
         host = parsed.netloc.lower()
         path = parsed.path
 
-        # youtu.be/VIDEOID
         if "youtu.be" in host:
             vid = path.strip("/").split("/")[0]
             return vid or None
 
         if "youtube.com" in host:
-            # /shorts/VIDEOID
             m = re.match(r"^/shorts/([A-Za-z0-9_\-]{5,})", path)
             if m:
                 return m.group(1)
-            # /watch?v=VIDEOID
             qs = parse_qs(parsed.query)
             if "v" in qs and len(qs["v"]) > 0:
                 return qs["v"][0]
@@ -77,16 +59,11 @@ def extract_video_id(url: str) -> str | None:
 
 
 def now_date_jst() -> str:
-    """JSTで YYYY-MM-DD を返す。"""
     return datetime.now(ZoneInfo("Asia/Tokyo")).date().isoformat()
 
 
-# ========== YouTube API（APIキー） ==========
+# ========== YouTube API ==========
 def fetch_video_stats(video_ids: list[str], api_key: str) -> dict[str, dict]:
-    """
-    video_ids について title と viewCount を取得。
-    戻り値: {video_id: {"title": str, "views": int}}
-    """
     yt = build("youtube", "v3", developerKey=api_key)
     results: dict[str, dict] = {}
     BATCH = 50
@@ -109,22 +86,18 @@ def build_drive_client(sa_json: str):
 
 
 def download_drive_csv_to_df(drive, file_id: str) -> pd.DataFrame:
-    """
-    DriveのCSV(file_id)をダウンロードしてDataFrameへ。
-    壊れている/空の場合は空DataFrame（CSV_COLUMNS）を返す。
-    """
     try:
         request = drive.files().get_media(fileId=file_id)
         fh = io.BytesIO()
         downloader = MediaIoBaseDownload(fh, request)
         done = False
         while not done:
-            status, done = downloader.next_chunk()
+            _, done = downloader.next_chunk()
         data = fh.getvalue()
         if not data:
             return pd.DataFrame(columns=CSV_COLUMNS)
         df = pd.read_csv(io.BytesIO(data))
-        # 欠けている列を追加し、必要列に揃える
+        # 欠けている列を追加して順序を揃える
         for c in CSV_COLUMNS:
             if c not in df.columns:
                 df[c] = pd.NA
@@ -135,9 +108,6 @@ def download_drive_csv_to_df(drive, file_id: str) -> pd.DataFrame:
 
 
 def upload_df_to_drive_csv(drive, file_id: str, df: pd.DataFrame):
-    """
-    DataFrameをCSV化して、同じfile_idに上書きアップロード。
-    """
     csv_bytes = df.to_csv(index=False).encode("utf-8")
     media = MediaIoBaseUpload(io.BytesIO(csv_bytes), mimetype="text/csv", resumable=False)
     drive.files().update(fileId=file_id, media_body=media).execute()
@@ -145,9 +115,6 @@ def upload_df_to_drive_csv(drive, file_id: str, df: pd.DataFrame):
 
 # ========== ローカルCSV ==========
 def append_to_local_csv(rows: list[dict], local_path: str, columns: list[str]):
-    """
-    ローカルCSVに追記（ヘッダが無ければ付与）。
-    """
     file_exists = os.path.isfile(local_path)
     with open(local_path, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=columns)
@@ -159,7 +126,7 @@ def append_to_local_csv(rows: list[dict], local_path: str, columns: list[str]):
 
 # ========== メイン処理 ==========
 def main():
-    # --- 認証/共有チェック（Helpful出力） ---
+    # 参考表示：サービスアカウント
     try:
         with open(SERVICE_ACCOUNT_JSON, "r", encoding="utf-8") as f:
             client_email = json.load(f).get("client_email", "")
@@ -167,40 +134,56 @@ def main():
             print(f"[INFO] サービスアカウント: {client_email}")
             print("      ※ このメールをDriveの対象CSV(または親フォルダ)に『編集者』で共有してください。")
     except Exception:
-        print("[WARN] credentials.json を読み取れませんでした。パスとファイル内容を確認してください。")
+        print("[WARN] credentials.json の読み取りに失敗しました。")
 
-    # 1) URLからvideoId抽出
-    video_ids, bad_urls = [], []
+    # URL → (no, url, video_id) を順番に作成（noは1始まり）
+    entries = []
+    bad_urls = []
+    no = 1
     for url in VIDEO_URLS:
         vid = extract_video_id(url)
-        (video_ids if vid else bad_urls).append(vid or url)
+        if vid:
+            # 表示用に「no. URL」の文字列も作る（例: "1. https://..."）
+            numbered_url = f"{no}. {url}"
+            entries.append((no, url, numbered_url, vid))
+            no += 1
+        else:
+            bad_urls.append(url)
 
     if bad_urls:
         print("※ videoIdを抽出できなかったURL:", bad_urls)
-    if not video_ids:
+    if not entries:
         print("動画IDが0件です。VIDEO_URLSを確認してください。")
         return
 
-    # 2) YouTubeから title / views を取得
+    # YouTubeから title / views 取得
+    video_ids = [e[3] for e in entries]
     stats = fetch_video_stats(video_ids, YOUTUBE_API_KEY)
     today = now_date_jst()
 
-    # 3) 追記行（date, title, views）
+    # 追記行を作成（date, no, url, title, views）
     new_rows = []
-    for vid in video_ids:
+    for no, url, numbered_url, vid in entries:
         s = stats.get(vid)
         if not s:
             continue
-        new_rows.append({"date": today, "title": s["title"], "views": s["views"]})
+        new_rows.append({
+            "date": today,
+            "no": no,
+            "url": numbered_url,  # 番号付きURLを保存
+            "title": s["title"],
+            "views": s["views"],
+        })
+
     if not new_rows:
         print("新規に追加できるデータがありませんでした。")
         return
 
-    # 4) ローカルCSVに追記（バックアップ）
+    # ローカルCSV追記
     append_to_local_csv(new_rows, LOCAL_CSV_PATH, CSV_COLUMNS)
     print(f"[OK] ローカルに追記しました: {LOCAL_CSV_PATH}")
 
-    # 5) DriveのCSVを取得→追記→上書き
+    # DriveのCSVを取得→追記→上書き
     drive, _ = build_drive_client(SERVICE_ACCOUNT_JSON)
     df_drive = download_drive_csv_to_df(drive, DRIVE_FILE_ID)
     df_append = pd.DataFrame(new_rows, columns=CSV_COLUMNS)
@@ -211,4 +194,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
