@@ -33,9 +33,11 @@ LOCAL_CSV_PATH = "local_youtube_views.csv"
 # 取得したい動画URLを指定（何本でもOK）
 VIDEO_URLS = [
     # 例:
-    "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    # "https://youtu.be/xxxxxxxxxxx",
-    # "https://www.youtube.com/shorts/xxxxxxxxxxx",
+    "https://youtu.be/pv8A7eubPQQ?si=cAZ3HIwTN_q_evlH",
+    "https://youtu.be/HcXduBwK5B4?si=SzkZxq1KKuMPcnRg",
+    "https://youtu.be/ZfIXXgqxVn8?si=_61UUSlWh4aBeH7W",
+    "https://youtu.be/mvBx-q8jnJc?si=r_Bn-GsdmydAhFTM",
+    "https://youtu.be/Ca5cdthagBM?si=I4lxZcKMeZfP9ziB",
 ]
 
 # 保存するカラム（要件：日付・動画名・再生数）
@@ -209,3 +211,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
